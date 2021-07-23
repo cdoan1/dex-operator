@@ -21,6 +21,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,6 +48,7 @@ type DexConfigReconciler struct {
 //+kubebuilder:rbac:groups=identitatem.io,resources=dexconfigs/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -99,6 +101,23 @@ func (r *DexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// Check if the service already exists, if not create a new one
+	foundserv := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: dexconfig.Name, Namespace: dexconfig.Namespace}, foundserv)
+	if err != nil && errors.IsNotFound(err) {
+		serv := r.serviceForDexConfig(dexconfig)
+		log.Info("Creating a new Service", "Service.Namespace", serv.Namespace, "Service.Name", serv.Name)
+		err = r.Create(ctx, serv)
+		if err != nil {
+			log.Error(err, "Failed to create new Service", "Service.Namespace", serv.Namespace, "Service.Name", serv.Name)
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get Service")
+		return ctrl.Result{}, err
+	}
+
 	// Ensure the deployment size is the same as the spec
 	size := dexconfig.Spec.Size
 	if *found.Spec.Replicas != size {
@@ -138,6 +157,47 @@ func (r *DexConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// }
 
 	return ctrl.Result{}, nil
+}
+
+func (r *DexConfigReconciler) serviceForDexConfig(m *identitatemiov1alpha1.DexConfig) *corev1.Service {
+
+	ls := labelsForDexConfig(m.Name)
+	log.Info("labels:", ls)
+
+	labels := map[string]string{
+		"app": m.Name,
+	}
+	matchlabels := map[string]string{
+		"app": m.Name,
+	}
+
+	serv := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      m.Name,
+			Namespace: m.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Port: 5556,
+					// TargetPort: 5556,
+					Protocol: "TCP",
+					Name:     "http",
+				},
+				{
+					Port: 5557,
+					// TargetPort: ,
+					Protocol: "TCP",
+					Name:     "grpc",
+				},
+			},
+			Selector: matchlabels,
+		},
+	}
+	ctrl.SetControllerReference(m, serv, r.Scheme)
+	return serv
 }
 
 // deploymentForDexConfig returns a dexconfig Deployment object
