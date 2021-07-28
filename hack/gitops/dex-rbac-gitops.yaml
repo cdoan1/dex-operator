@@ -11,11 +11,11 @@ rules:
   resources: ["customresourcedefinitions"]
   verbs: ["create"] # To manage its own resources, dex must be able to create customresourcedefinitions
 - apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["*"] # To manage its own resources, dex must be able to create customresourcedefinitions
+  resources: ["configmaps"] # dex pods needs
+  verbs: ["*"]
 - apiGroups: [""]
   resources: ["secrets"]
-  verbs: ["*"] # To manage its own resources, dex must be able to create customresourcedefinitions
+  verbs: ["*"] # dex pods needs
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
