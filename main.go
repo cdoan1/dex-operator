@@ -35,6 +35,7 @@ import (
 
 	identitatemiov1alpha1 "github.com/cdoan1/dex-operator/api/v1alpha1"
 	"github.com/cdoan1/dex-operator/controllers"
+	dexapi "github.com/cdoan1/dex-operator/pkg/api"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -55,11 +56,19 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var dexGrpc string
+	var dexClientCA string
+	var dexClientCert string
+	var dexClientKey string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&dexGrpc, "dex-grpc", "dex:35000", "Dex grpc host and port")
+	flag.StringVar(&dexClientCA, "dex-grpc-ca", "/etc/dex/tls/ca.crt", "Path to the Dex GRPC CA")
+	flag.StringVar(&dexClientCert, "dex-grpc-cert", "/etc/dex/tls/tls.crt", "Path to the Dex GRPC client certificate")
+	flag.StringVar(&dexClientKey, "dex-grpc-key", "/etc/dex/tls/tls.key", "Path to the Dex GRPC client key")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -79,6 +88,22 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
+	}
+
+	// Setup a dex client
+	dexOptions := &dexapi.Options{
+		HostAndPort: dexGrpc,
+		ClientCA:    dexClientCA,
+		ClientCrt:   dexClientCert,
+		ClientKey:   dexClientKey,
+	}
+	dexApiClient, err := dexapi.NewClient(dexOptions)
+	if err != nil {
+		setupLog.Error(err, "unable to setup Dex grcp client")
+		os.Exit(1)
+	}
+	if dexApiClient != nil {
+		setupLog.Info("dex api client not nil!")
 	}
 
 	if err = (&controllers.DexConfigReconciler{
